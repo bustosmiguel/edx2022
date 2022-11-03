@@ -1,0 +1,757 @@
+---
+title: "HarvardX PH125.9x"
+author: "Miguel Angel Bustos Sáez"
+date: '2022-08-06'
+output:
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: '2'
+  html_document:
+    toc: yes
+    toc_depth: '2'
+    df_print: paged
+subtitle: EDX Project
+---
+
+\pagebreak
+
+
+# The introduction
+
+The present project it´s "The Prediction Model Performance", based on The Sample Mean Square Error or RMSE. Using data analysis packages and the ten percent of the edx dataset: the validation set.
+
+With the purpose to develop a recommendation system, here it´s presenting a series of data analysis where RMSE it´s the standard deviation of the residuals, and these residuals are a measure of how far from the regression line data points are and how spread out these residuals are. And shows how concentrated the data is around the line of best fit, having an objective reached below 0.8649
+
+
+```{r, include=FALSE}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(tidyverse)
+```
+
+
+```{r, include=F}
+
+if(!require(readr)) install.packages("readr")
+  if(!require(QCGWAS)) install.packages("QCGWAS")
+  
+  library(caret)
+  library(randomForest)
+  library(lubridate)
+  library(tidyverse)
+  library(ggplot2)
+  library(scales) #Percentage
+  library(ggrepel) # For geom_text_repel() 
+  
+```
+
+
+
+```{r, include=F}
+  
+##########################################################
+# Create edx set, validation set (final hold-out test set)
+##########################################################
+
+# Note: this process could take a couple of minutes
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+
+library(tidyverse)
+library(caret)
+library(data.table)
+
+# MovieLens 10M dataset:
+# https://grouplens.org/datasets/movielens/10m/
+# http://files.grouplens.org/datasets/movielens/ml-10m.zip
+
+dl <- tempfile()
+download.file("https://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
+
+ratings <- fread(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings.dat"))),
+                 col.names = c("userId", "movieId", "rating", "timestamp"))
+
+movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
+colnames(movies) <- c("movieId", "title", "genres")
+
+
+# if using R 4.0 or later:
+movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(movieId),
+                                           title = as.character(title),
+                                           genres = as.character(genres))
+
+
+movielens <- left_join(ratings, movies, by = "movieId")
+
+# Validation set will be 10% of MovieLens data
+set.seed(1, sample.kind="Rounding") # if using R 3.5 or earlier, use `set.seed(1)`
+test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
+edx <- movielens[-test_index,]
+temp <- movielens[test_index,]
+
+# Make sure userId and movieId in validation set are also in edx set
+validation <- temp %>% 
+  semi_join(edx, by = "movieId") %>%
+  semi_join(edx, by = "userId")
+
+# Add rows removed from validation set back into edx set
+removed <- anti_join(temp, validation)
+edx <- rbind(edx, removed)
+
+rm(dl, ratings, movies, test_index, temp, movielens, removed)
+
+
+ls()
+```
+
+
+# The Data
+
+## The Variables
+
+The variables are; userId, movieId, rating, timestamp, title and genres. the timestamp passed to as date time format creating a date column. Additionaly it´s created a year variable, extracted from movie column:
+
+
+**The validation set**
+
+```{r, include=FALSE}
+edx <- mutate(edx, date = as_datetime(timestamp))
+validation <- mutate(validation, date = as_datetime(timestamp))
+edx %>% select(genres) %>% separate_rows() %>% summarise(n = n()) 
+```
+
+```{r, include=FALSE}
+edx = edx %>% mutate(year = as.numeric(str_sub(str_trim(title,side = "right"), start = -5,end = -2)))
+validation = validation %>% mutate(year = as.numeric(str_sub(str_trim(title,side = "right"), start = -5,end = -2)))
+str(validation)
+```
+In the validation set, we have eight variables or columns:
+
+* UserId: A number to identify a user
+
+* MovieId: A number to identify a movie
+
+* Rating: One to five, in a sequence of 0.5, are 10 ratings
+
+* Timestamp: Record the time or date of
+
+* Title: The name of the movie
+
+* Genres: The gente of the movie, some movies have more than one
+
+* Date: The format of hour, minute and second registration
+
+* Year: The year of that registration ranking
+
+```{r, echo=FALSE, fig.dim = c(5, 3), fig.align='center'}
+
+validation %>% select(where(is.numeric)) %>% 
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value") %>% 
+  ggplot(aes(x = Variable, y = Value, fill = Variable))+
+  geom_boxplot()+
+  scale_y_continuous(trans = "log10")+
+  ggtitle("Numerical Variables Boxplot Distribution")+
+  theme(axis.text.x = element_text(angle = 90))+
+  theme(panel.background = element_rect(fill = "#d5e4eb"))+
+  theme(plot.background = element_rect(fill = "#bfbe9c"))+
+  theme(panel.background = element_rect(fill = "#bfbe9c"))+
+  theme(legend.background = element_rect(fill="#bfbe9c", size=0.2, color = "#bfbe9c", linetype="solid",colour = "none"))+
+  theme(legend.key = element_rect(fill = "transparent"))+
+  theme(legend.key.size = unit(1, "cm"))+
+  theme(axis.title.x = element_text(color = "Black", size = 12))+
+  theme(axis.title.y = element_text(color = "Black", size = 12))
+```
+And here we have a small boxplot that shows the numeric variables from validation data set
+
+\pagebreak
+
+## Rating Proportion
+
+**Mode & Mean**: The mode it´s the rating 4 with more than two million and a half registration. And the mean it´s 3.5
+
+```{r, echo=F}
+edx %>%
+  group_by(rating) %>%
+  summarise(n = n()) %>%
+  mutate(percent = n/sum(n))
+
+```
+
+```{r, echo=FALSE}
+mean(edx$rating)
+```
+
+## Rating and the ratio histogram distribution
+
+```{r, echo=F, fig.dim=c(6:4), fig.align='center'}
+ggplot(data = edx %>%
+         group_by(rating) %>%
+         summarise(n = n()) %>%
+         mutate(percent = n/sum(n)), aes(x = rating, y = percent))+
+  geom_col(fill = "Blue", colour = "Black")+
+  geom_text(aes(label = rating), vjust = -0.5, colour = "Black", size = 3)+
+  geom_text(aes(label = round(x = percent, digits = 4), angle = 45, vjust = 0.8, hjust = 1, colour = percent), nudge_y = 0.03, size = 4)+
+  theme(panel.background = element_rect(fill = "#d5e4eb"))+
+  theme(plot.background = element_rect(fill = "#bfbe9c"))+
+  theme(panel.background = element_rect(fill = "#bfbe9c"))+
+  theme(legend.background = element_rect(fill="#bfbe9c", size=0.2, color = "#bfbe9c", linetype="solid",colour = "none"))+
+  theme(legend.key = element_rect(fill = "transparent"))+
+  theme(legend.key.size = unit(0.2, "cm"))+
+  theme(axis.title.x = element_text(color = "Black", size = 12))+
+  theme(axis.title.y = element_text(color = "Black", size = 12))+
+  xlab("Rating Distribution")+
+  ylab("Percent Ratio")+
+  theme(legend.position = "right")  #scale_fill_manual(values = c("0.5" = "#FCFED4", "1" = "#CCEDB1", "1.5" = "#41B7C4"))
+
+
+```
+Plot with the percent ratio and rating distribution.
+
+\pagebreak
+
+
+## The sample size
+
+The issue of calculating the effective sample size it´s though this formula:
+
+$$n <- (p*q)*z^2/e^2$$
+
+
+Example of how to calculate the finite sample size
+With this formula, the sample size is determined by calculating the sample. The confidence level corresponds to a Z-score. This is a constant value needed for this equation. Here are the Z-scores for the most common trust levels:
+
+**Z-score**|**p**|**q**|**e**|**z**|**Formula**|**Sample Result**
+----------------------| ----------------------|---|---|---|---|---
+90|0.5|0.5|0.01|1.65|n <- *(pq)z^2/e^2*|6.806
+
+
+Based on this example, and on our formula, the "N" will be the "Validation" quantity, we will choose our Z and it will be 1.65 (remember that the researcher assigned a confidence level of 90%) and “e” will be 1% . And since our example says that the probability of the event occurring is unknown, we assign 50% to "p" and 50% to "q".
+
+    
+
+```{r,echo=T}
+
+p <- 0.5 #(50%)     p = The probability that an event will occur
+q <- 0.5 #(50%)     q = The probability that an event will not occur
+e <-  0.01 #(0,1%)
+z <- 1.65
+n <- (p*q)*z^2/e^2
+```
+
+## The sample size Plot
+
+```{r,  echo=FALSE, fig.dim = c(7, 4), fig.align='center'}
+edx[sample(1:nrow(edx), 6806),] %>%
+  filter(genres %in% c("Comedy", "Romance", "Action", "Crime", "Thriller", "Drama", 
+                       "Sci-Fi", "Adventure", "Children", "Fantasy","War", 
+                       "Animation", "Musical", "Western", "Mystery", "Film-Noir", 
+                       "Horror", "Documentary", "IMAX")) %>% 
+  ggplot(aes(x = rating, y = genres))+
+  geom_boxplot(outlier.shape = NA, aes(fill = genres))+
+  geom_point(position = "jitter", aes(color = genres))+
+  ggtitle("C.I. 90%, z-value 1,64, se 1%, p-value 0.5, q-value 0.5", subtitle = "Result: Sample of 6.806")+
+  theme(panel.background = element_rect(fill = "#d5e4eb"))+
+  theme(plot.background = element_rect(fill = "#bfbe9c"))+
+  theme(panel.background = element_rect(fill = "#bfbe9c"))+
+  theme(legend.background = element_rect(fill="#bfbe9c", size=0.2, color = "#bfbe9c", linetype="solid",colour = "none"))+
+  theme(legend.key = element_rect(fill = "transparent"))+
+  theme(legend.key.size = unit(1, "cm"))+
+  theme(axis.title.x = element_text(color = "Black", size = 12))+
+  theme(axis.title.y = element_text(color = "Black", size = 12))+
+  xlab("Rating")+
+  ylab("Genres")+
+  theme(legend.position = "bottom")
+
+```
+
+\pagebreak
+
+
+## Movie ID movieId Frequency
+
+The movieId frequency, it´s very notorious that are some movieId´s more frequent than others.
+
+```{r, echo = FALSE, fig.dim = c(7, 4), fig.align='center'}
+
+count(validation, movieId) %>% ggplot(aes(n))+ 
+    geom_histogram(bins = 20, fill = "Blue", color = "Black")+
+    scale_x_continuous(trans = "log10")+
+    ggtitle("MovieId", subtitle = "Distribution of the number of ratings of each movie")+
+    theme(panel.background = element_rect(fill = "#d5e4eb"))+
+    theme(plot.background = element_rect(fill = "#bfbe9c"))+
+    theme(panel.background = element_rect(fill = "#bfbe9c"))+
+    theme(legend.background = element_rect(fill="#bfbe9c", size=0.2, color = "#bfbe9c", linetype="solid",colour = "none"))+
+    theme(legend.key = element_rect(fill = "transparent"))+
+    theme(legend.key.size = unit(1, "cm"))+
+    theme(axis.title.x = element_text(color = "Black", size = 12))+
+    theme(axis.title.y = element_text(color = "Black", size = 12))+
+    xlab("MovieId")+
+    ylab("Frequency")
+```
+
+
+Here it is the MovieId independent variable and the Frequency as the dependent variable.
+
+
+
+```{r, include=FALSE}
+
+mu <- mean(validation$rating)  
+mu
+```
+
+```{r, include=TRUE}
+
+b_i_rating_avg <- validation %>% 
+  group_by(movieId) %>% 
+  summarise(b_i = mean(rating - mu))
+head(b_i_rating_avg)
+```
+
+\pagebreak
+
+## Sci-Fi and Film-Noir to SciFI and FilmNoir
+
+```{r, include=F}
+
+summary(mu+validation %>%
+  left_join(validation %>% 
+              group_by(movieId) %>% 
+              summarise(b_i = mean(rating - mu)), by = "movieId") %>% .$b_i)
+
+```
+
+
+
+**Some fix in Sci-Fi and Film-Noir**
+
+```{r, echo=TRUE}
+validation %>% separate_rows(genres) %>% distinct(genres)
+
+
+# Rating average and Rating Standard Error
+
+validation <- validation %>% separate_rows(genres)
+validation$genres[validation$genres == "Sci-Fi"] <- "SciFi"
+validation$genres[validation$genres == "Sci"] <- "SciFi"
+validation$genres[validation$genres == "Fi"] <- "SciFi"
+validation$genres[validation$genres == "Film-Noir"] <- "FilmNoir"
+validation$genres[validation$genres == "Film"] <- "FilmNoir"
+validation$genres[validation$genres == "Noir"] <- "FilmNoir"
+
+head(validation)
+```
+
+\pagebreak
+
+
+# RMSE Preparation
+
+## The Rating Average of Each Movie b_i_rating_avg
+
+3.512033 it´s the mean validation rating:
+
+```{r, echo=FALSE}
+mu <- mean(validation$rating)  
+mu
+
+b_i_rating_avg <- validation %>% 
+  group_by(movieId) %>% 
+  summarise(b_i = mean(rating - mu))
+
+```
+
+**The Rating Average of Each Movie**: Here it´s the head validation rating of each registration, With the rating average of each movie, it´s significant for the RMSE formula, so for that reason it´s bresented this value.
+
+```{r, echo=TRUE}
+head(b_i_rating_avg)
+```
+**The Rating Average of Each Movie Plot**: The b_i_rating_avg it´s the Rating Average of Each Movie and Percentile Distribution
+
+```{r, echo=FALSE, fig.dim = c(7, 4), fig.align='center'}
+
+validation %>% 
+  group_by(movieId) %>% 
+  summarise(b_i = mean(rating - mu)) %>% 
+  ggplot(aes(b_i))+
+  geom_histogram(binwidth = 0.8, fill = "Blue", col = "Darkblue")+
+  theme(panel.background = element_rect(fill = "#d5e4eb"))+
+  theme(plot.background = element_rect(fill = "#bfbe9c"))+
+  theme(panel.background = element_rect(fill = "#bfbe9c"))+
+  theme(legend.background = element_rect(fill="#bfbe9c", size=0.2, color = "#bfbe9c", linetype="solid",colour = "none"))+
+  theme(legend.key = element_rect(fill = "transparent"))+
+  theme(legend.key.size = unit(1, "cm"))+
+  theme(axis.title.x = element_text(color = "Black", size = 12))+
+  theme(axis.title.y = element_text(color = "Black", size = 12))+
+  xlab("Rating Average of Each Movie")+
+  ylab("")+
+  ggtitle("Rating Average Plot", subtitle = "Movie Averages Least Squares Estimates")
+```
+
+
+\pagebreak
+
+## The User Average of each userId: b_u_user_avg
+  
+
+**The User Average**: Shows the average of each user.
+
+```{r, echo=FALSE}
+
+b_u_user_avg <- validation %>% 
+  left_join(b_i_rating_avg, by = "movieId") %>% 
+  group_by(userId) %>% #De movieId lo cambié a userId
+  summarise(b_u = mean(rating - mu- b_i))
+```
+
+```{r, echo=TRUE}
+head(b_u_user_avg)
+```
+
+
+**The User Average of Each User Plot**: Here it is the rating average of movies.
+
+```{r, echo=FALSE, fig.dim = c(7, 4), fig.align='center'}
+
+
+validation %>% 
+    left_join(validation %>% 
+                group_by(movieId) %>% 
+                summarise(b_i = mean(rating - mu)), by = "movieId") %>% 
+    group_by(userId) %>% 
+    summarise(b_u = mean(rating - mu - b_i)) %>% 
+    ggplot(aes(b_u))+
+    geom_histogram(bins = 9, fill = "Blue", col = "Darkblue")+
+    theme(panel.background = element_rect(fill = "#d5e4eb"))+
+    theme(plot.background = element_rect(fill = "#bfbe9c"))+
+    theme(panel.background = element_rect(fill = "#bfbe9c"))+
+    theme(legend.background = element_rect(fill="#bfbe9c", size=0.2, color = "#bfbe9c", linetype="solid",colour = "none"))+
+    theme(legend.key = element_rect(fill = "transparent"))+
+    theme(legend.key.size = unit(1, "cm"))+
+    theme(axis.title.x = element_text(color = "Black", size = 12))+
+    theme(axis.title.y = element_text(color = "Black", size = 12))+
+    xlab("Rating Average of Each Movie")+
+    ylab("")+
+    ggtitle("B_u distribution", subtitle = "The Bias of Users")
+
+
+```
+
+Averages are necessary to take an objective prediction:
+
+* The Rating Average of Each Movie: b_i_rating_avg
+* The User Average of each userId: b_u_user_avg
+
+Until here average movie and userId averages are represented in the data.
+
+\pagebreak
+
+## The Rating average and SE of each genre & plot
+
+
+```{r, echo=FALSE}
+  validation %>% separate_rows(genres) %>% 
+    select(c(title, genres, rating)) %>% 
+    group_by(genres) %>%
+    summarise(n = n(), average = mean(rating), se = sd(rating)/sqrt(n())) 
+
+```
+
+
+```{r, echo=FALSE}
+
+  validation %>% separate_rows(genres) %>% 
+  select(c(title, genres, rating)) %>% 
+  group_by(genres) %>%
+  summarise(n = n(), average = mean(rating), se = sd(rating)/sqrt(n())) %>% 
+  ggplot(aes(genres, average))+
+  geom_point(aes(genres, average, color = se), size = 2)+
+  geom_label_repel(aes(label = se), nudge_x = 1.5, nudge_y = 0.05)+
+  theme(axis.text.x = element_text(angle = 90))+
+  theme(panel.background = element_rect(fill = "#d5e4eb"))+
+  theme(plot.background = element_rect(fill = "#bfbe9c"))+
+  theme(panel.background = element_rect(fill = "#bfbe9c"))+
+  theme(legend.background = element_rect(fill="#bfbe9c", size=0.2, color = "#bfbe9c", linetype="solid",colour = "none"))+
+  theme(legend.key = element_rect(fill = "transparent"))+
+  theme(legend.key.size = unit(0.2, "cm"))+
+  theme(axis.title.x = element_text(color = "Black", size = 12))+
+  theme(axis.title.y = element_text(color = "Black", size = 12))+
+  xlab("19 Genres")+
+  ylab("Rating average")+
+  ggtitle("Rating average and SE of each genre")
+```
+
+
+## Distribution of b_g
+
+Now it´s necessary to obtain the average of rating minus mu, b_i and b_u, taking the others averages, now b_g is added to the team:
+
+* The Rating Average of Each Movie: **b_i_rating_avg**
+* The User Average of each userId: **b_u_user_avg**
+* The Rating less mu less b_i and less b_u : **b_g_genres_avg**
+
+```{r, echo=FALSE}
+  b_g <- validation %>% 
+    left_join(b_i_rating_avg, by = "movieId") %>% 
+    group_by(movieId) %>% 
+    summarise(b_u = mean(rating - mu- b_i))
+  
+  head(b_g)
+```
+
+
+**Distribution of b_g averages**
+
+```{r, echo=FALSE}
+
+b_g_genres_avg <- validation %>% 
+  left_join(b_u_user_avg, by = "userId") %>% 
+  left_join(b_i_rating_avg, by = "movieId") %>% 
+  group_by(genres) %>% 
+  summarise(b_g = mean(rating-mu-b_i-b_u))
+
+```
+
+
+```{r, echo=FALSE}
+
+validation %>% 
+  left_join(b_u_user_avg, by = "userId") %>% 
+  left_join(b_i_rating_avg, by = "movieId") %>% 
+  group_by(genres) %>% 
+  summarise(b_g = mean(rating-mu-b_i-b_u)) %>%
+  ggplot(aes(b_g))+
+  geom_histogram(bins = 10, fill = "Blue", col = "Darkblue")+
+  theme(panel.background = element_rect(fill = "#d5e4eb"))+
+  theme(plot.background = element_rect(fill = "#bfbe9c"))+
+  theme(panel.background = element_rect(fill = "#bfbe9c"))+
+  theme(legend.background = element_rect(fill="#bfbe9c", size=0.2, color = "#bfbe9c", linetype="solid",colour = "none"))+
+  theme(legend.key = element_rect(fill = "transparent"))+
+  theme(axis.title.x = element_text(color = "Black", size = 12))+
+  theme(axis.title.y = element_text(color = "Black", size = 12))+
+  xlab("Genres Average")+
+  ylab("")+
+  ggtitle("B_g distribution", subtitle = "b_g = mean(rating-mu-b_i-b_u)")
+  
+
+```
+
+Now all the variables that were created are accepted to make a prediction
+
+\pagebreak
+
+# Prediction
+
+Taking all these: mu + b_i + b_u + b_g, now it´s prediction:
+
+```{r, echo=FALSE}
+
+prediction <- validation %>% 
+  left_join(b_u_user_avg, by = "userId") %>% 
+  left_join(b_i_rating_avg, by = "movieId") %>% 
+  left_join(b_g_genres_avg, by = "genres") %>% 
+  summarise(predict = mu + b_i + b_u + b_g) %>% 
+  pull(predict)
+
+```
+
+**Prediction Result**
+
+Here it is the prediction head and summary result:
+
+```{r, echo=FALSE}
+
+head(prediction)
+summary(prediction)
+
+```
+
+
+
+# Regularization
+
+Good movies are attracted by users, these will watch and rate each movies, movies with few viewers generate variable results.
+
+This plot shows that the rating mean and number of movie per quantity of n_rating quantity, this is the relationship between the movies rating and the number of times have been rated.
+
+```{r, echo=FALSE}
+  validation %>% 
+    group_by(movieId) %>% 
+    summarise(n = n(), rating = mean(rating)) %>% 
+    ggplot(aes(n, rating))+
+    theme(axis.text.x = element_text(angle = 90))+
+    theme(panel.background = element_rect(fill = "#d5e4eb"))+
+    theme(plot.background = element_rect(fill = "#bfbe9c"))+
+    theme(panel.background = element_rect(fill = "#bfbe9c"))+
+    theme(legend.background = element_rect(fill="#bfbe9c", size=0.2, color = "#bfbe9c", linetype="solid",colour = "none"))+
+    theme(legend.key = element_rect(fill = "transparent"))+
+    theme(legend.key.size = unit(1, "cm"))+
+    theme(axis.title.x = element_text(color = "Black", size = 12))+
+    theme(axis.title.y = element_text(color = "Black", size = 12))+
+    xlab("Movie_n_rating")+
+    ylab("Movie_Mean_rating")+
+    ggtitle("Relationship between: Movies Rating and the Number of Times have been rated")+
+    geom_point()+
+    geom_smooth(color = "blue")
+  
+
+```
+
+
+## Residuals or Prediction errors
+
+Create a residuals data frame that is residuals, that is the rating minus mu + b_i + b_u + b_g, with this difference shows how concentrated the data is around the best fit or how far the data points are in this case:
+
+$$error = actual - predicted$$
+
+
+
+```{r, echo=FALSE}
+
+residuals <- validation %>% 
+    left_join(b_u_user_avg, by = "userId") %>% 
+    left_join(b_i_rating_avg, by = "movieId") %>% 
+    left_join(b_g_genres_avg, by = "genres") %>% 
+    mutate(residual = rating - (mu + b_i + b_u + b_g))
+```
+
+This is the same as:
+
+$$residual = rating - predicted (mu + b_i + b_u + b_g)$$
+
+```{r, echo=FALSE}
+  
+  head(residuals)
+
+```
+
+
+
+```{r, echo=TRUE, fig.dim = c(5, 3), fig.align='center'}
+
+residuals %>% arrange(desc(abs(residual))) %>% 
+    ggplot(aes(rating, residual))+
+    geom_point(aes(rating, residual))+
+  theme(panel.background = element_rect(fill = "#bfbe9c"))
+
+```
+
+
+\pagebreak
+
+## Basic RMSE 
+
+To obtain a Basic RMSE, take the rating and the mean of rating, both in validation data set.
+
+```{r, include=FALSE}
+basic_rmse <- RMSE(validation$rating, mean(validation$rating))
+rmse_res <- data_frame(method = "Just the mean result", RMSE = basic_rmse)
+```
+
+
+The basic RMSE it´s 1.054861
+
+```{r, echo=TRUE}
+
+basic_rmse
+```
+
+
+```{r, echo=TRUE}
+rmse_res
+```
+
+
+## Improvement 
+
+Thanks to all the vectors that were created before, now it´s possible to obtain the final RMSE, taking all the average that were obtained:
+
+* The Rating Average of Each Movie: **b_i_rating_avg**
+* The User Average of each userId: **b_u_user_avg**
+* The Rating less mu less b_i and less b_u : **b_g_genres_avg**
+
+Now the results are:
+
+
+```{r, include=FALSE}
+
+predicted_ratings <- mu + validation %>% 
+  left_join(b_i_rating_avg, by = "movieId") %>% 
+  .$b_i
+
+```
+
+
+Predicted Ratings Summary
+
+```{r, echo=TRUE}
+
+summary(predicted_ratings)
+```
+
+
+
+
+
+```{r, include=FALSE}
+
+  final_model_rmse <- RMSE(validation$rating, predicted_ratings)
+  rmse_res <- bind_rows(rmse_res,
+                        data_frame(method = "The movie effect Model",
+                        RMSE = final_model_rmse))
+```
+
+
+```{r, echo=TRUE}
+
+  final_model_rmse 
+```
+
+The single or Basic RMSE result it´s 1.05, but with The movie effect Model, the result it´s getting better:
+
+```{r, echo=TRUE}
+  rmse_res
+```
+
+\pagebreak
+# Final RMSE
+
+***0.81***: Now taking Movie, User and Genre Effects Model, the RMSE it´s better obtaining a 0.81 result.
+
+```{r,include=FALSE}
+
+predicted_ratings <- validation %>% 
+  left_join(b_u_user_avg, by = "userId") %>% 
+  left_join(b_i_rating_avg, by = "movieId") %>% 
+  left_join(b_g_genres_avg, by = "genres") %>% 
+  summarise(predict = mu + b_i + b_u + b_g) %>% 
+  pull(predict) 
+
+final_3_model_rmse <- RMSE(validation$rating, predicted_ratings)
+rmse_res <- bind_rows(rmse_res,
+                      data_frame(method = "Movie + User + Genre Effects Model",
+                                 RMSE = final_3_model_rmse))
+
+```
+
+
+```{r, echo=TRUE}
+
+rmse_res
+
+```
+
+\pagebreak
+
+# Conclusion
+
+Based on The Sample Mean Square Error or RMSE taking the averages of Movie, User and the Genre Effects, makes a Prediction Model Performance Using data analysis packages, obtaining a good RMSE result or approximation.
+
+The limitations in the RMSE result, even the same as the random forest, the RMSE needs more variables or columns to obtain a better result, more numerical variables to obtain a better RMSE. Other limitations was the time to execute the data code, but this was necessary the large data to obtain a good RMSE.
+
+In the future, to obtain a better result, it´s necessary to obtain more numerical variables or columns to obtain more averages. It´s important to have a larger data, all these to doing a matrix factorization, that can improve the model and the result.
+
