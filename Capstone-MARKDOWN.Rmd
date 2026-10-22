@@ -11,7 +11,7 @@ output:
     toc: yes
     toc_depth: '2'
     df_print: paged
-subtitle: EDX Project
+subtitle: EDX Project 22 oct 2026 upgrade
 ---
 
 \pagebreak
@@ -106,6 +106,8 @@ edx <- rbind(edx, removed)
 
 rm(dl, ratings, movies, test_index, temp, movielens, removed)
 
+options(timeout = 600)
+options(download.file.method = "libcurl")
 
 ls()
 
