@@ -34,16 +34,19 @@ library(tidyverse)
 
 ```{r, include=F}
 
-if(!require(readr)) install.packages("readr")
-  if(!require(QCGWAS)) install.packages("QCGWAS")
+```{r, include=F}
+# if(!require(readr)) install.packages("readr")
+# if(!require(QCGWAS)) install.packages("QCGWAS")
   
-  library(caret)
-  library(randomForest)
-  library(lubridate)
-  library(tidyverse)
-  library(ggplot2)
-  library(scales) #Percentage
-  library(ggrepel) # For geom_text_repel() 
+library(caret)
+library(randomForest)
+library(lubridate)
+library(tidyverse)
+library(ggplot2)
+library(scales) #Percentage
+library(ggrepel) # For geom_text_repel()
+
+
   
 ```
 
@@ -71,14 +74,19 @@ library(data.table)
 # https://grouplens.org/datasets/movielens/10m/
 # http://files.grouplens.org/datasets/movielens/ml-10m.zip
 
-dl <- tempfile()
-download.file("https://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
+#dl <- tempfile()
+#download.file("https://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
 
-ratings <- fread(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings.dat"))),
+# MovieLens 10M dataset:
+# https://grouplens.org/datasets/movielens/10m/
+# http://files.grouplens.org/datasets/movielens/ml-10m.zip
+
+ratings <- fread(text = gsub("::", "\t", readLines("ml-10M100K/ratings.dat")),
                  col.names = c("userId", "movieId", "rating", "timestamp"))
 
-movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
+movies <- str_split_fixed(readLines("ml-10M100K/movies.dat"), "\\::", 3)
 colnames(movies) <- c("movieId", "title", "genres")
+
 
 
 # if using R 4.0 or later:
@@ -104,10 +112,25 @@ validation <- temp %>%
 removed <- anti_join(temp, validation)
 edx <- rbind(edx, removed)
 
-rm(dl, ratings, movies, test_index, temp, movielens, removed)
+rm(ratings, movies, test_index, temp, movielens, removed)
 
-options(timeout = 600)
-options(download.file.method = "libcurl")
+# MovieLens 10M dataset:
+# https://grouplens.org/datasets/movielens/10m/
+# http://files.grouplens.org/datasets/movielens/ml-10m.zip
+
+if (!file.exists("ml-10M100K/ratings.dat")) {
+  options(timeout = 600)
+  dl <- tempfile()
+  download.file("https://files.grouplens.org/datasets/movielens/ml-10m.zip", dl, method = "curl", extra = "-L --retry 5")
+  unzip(dl, c("ml-10M100K/ratings.dat", "ml-10M100K/movies.dat"))
+  rm(dl)
+}
+
+ratings <- fread(text = gsub("::", "\t", readLines("ml-10M100K/ratings.dat")),
+                 col.names = c("userId", "movieId", "rating", "timestamp"))
+
+movies <- str_split_fixed(readLines("ml-10M100K/movies.dat"), "\\::", 3)
+colnames(movies) <- c("movieId", "title", "genres")
 
 ls()
 
@@ -192,7 +215,7 @@ mean(edx$rating)
 
 ## Rating and the ratio histogram distribution
 
-```{r, echo=F, fig.dim=c(6:4), fig.align='center'}
+```{r, echo=F, fig.dim=c(6, 4), fig.align='center'}
 ggplot(data = edx %>%
          group_by(rating) %>%
          summarise(n = n()) %>%
